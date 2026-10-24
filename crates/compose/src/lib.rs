@@ -1547,10 +1547,7 @@ fn shapeless_stroke_bounds(layer: &Layer) -> Option<Rect> {
         return None;
     }
 
-    if !layer.effects.enabled
-        || !layer.effects.items.iter().any(|e| e.enabled())
-        || layer.effects.items.iter().any(|e| e.enabled() && !matches!(e, photocraft_doc::Effect::Stroke(_)))
-    {
+    if !layer.effects.enabled || layer.effects.active().next().is_none() || layer.effects.active().any(|e| !matches!(e, photocraft_doc::Effect::Stroke(_))) {
         return None;
     }
 
@@ -2394,7 +2391,12 @@ fn cached_effect_maps(layer: &Layer, region: Rect, key: u64, cx: &Ctx) -> std::s
 
 fn texture_ctx<'a>(layer: &Layer, region: Rect, cx: &Ctx<'a>) -> effects::TextureCtx<'a> {
     let sb = effects_frame(layer, cx.canvas);
-    effects::TextureCtx { rect: region, patterns: cx.patterns.source(), anchor: layer.effects.reference.unwrap_or((f64::from(sb.x0), f64::from(sb.y0))) }
+    effects::TextureCtx {
+        rect: region,
+        patterns: cx.patterns.source(),
+        anchor: layer.effects.reference.unwrap_or((f64::from(sb.x0), f64::from(sb.y0))),
+        canvas: cx.canvas,
+    }
 }
 
 /// Composite `layer` onto `base` restricted to the base's alpha (clipping mask semantics),
