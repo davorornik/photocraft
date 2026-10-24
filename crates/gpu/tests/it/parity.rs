@@ -205,17 +205,44 @@ fn worst_diff(cpu: &[[f32; 4]], gpu: &[[f32; 4]]) -> (f32, usize) {
     worst
 }
 
-/// GPU (whole textures, then pages) vs CPU over `rect`: Err with the worst pixel if over the
-/// tolerance, else the stats of the unpaged render.
+/// The documented CPU-only stacks: a layer with effect noise, Stroke Emboss next to a stroke, or an outside stroke over a
+/// drop shadow or outer glow. The GPU declines these ("uses the CPU path") so the app renders them on the CPU compositor.
+fn is_cpu_only(doc: &Document) -> bool {
+    use photocraft_doc::{BevelStyle, Effect};
+    doc.walk().into_iter().any(|(_, _, layer)| {
+        let fx: Vec<&Effect> = layer.effects.active().collect();
+        let noisy = fx.iter().any(|e| match e {
+            Effect::DropShadow(s) | Effect::InnerShadow(s) => s.noise > 0.0,
+            Effect::OuterGlow(g) | Effect::InnerGlow(g) => g.noise > 0.0,
+            _ => false,
+        });
+        let stroke_emboss = fx.iter().any(|e| matches!(e, Effect::BevelEmboss(b) if b.style == BevelStyle::StrokeEmboss));
+        let outside_stroke = fx.iter().any(|e| matches!(e, Effect::Stroke(st) if photocraft_compose::effects::stroke_widths(st).1 > 0.0));
+        let exterior = fx.iter().any(|e| matches!(e, Effect::DropShadow(_) | Effect::OuterGlow(_)));
+        noisy || stroke_emboss || (outside_stroke && exterior)
+    })
+}
+
+/// GPU (whole textures, then pages) vs CPU over `rect`: Err with the worst pixel if over the tolerance, else the stats of
+/// the unpaged render. A stack the GPU falls back on is an error unless it is one of the documented CPU-only stacks
+/// ([`is_cpu_only`]), and those must be declined: the test fails either way when the expectation and the GPU disagree.
 fn diff_rect(g: &mut Gpu, doc: &Document, rect: Rect, what: &str) -> Result<photocraft_gpu::Stats, String> {
+    if is_cpu_only(doc) {
+        for (label, comp) in [("", &mut g.comp), (" (paged)", &mut g.paged)] {
+            match photocraft_gpu::render_to_vec_stats(comp, &g.device, &g.queue, doc, rect) {
+                Err(e) if e.to_string().contains("uses the CPU path") => {}
+                Err(e) => return Err(format!("{what}{label}: expected the CPU path, got {e}")),
+                Ok(_) => return Err(format!("{what}{label}: a CPU-only stack rendered on the GPU")),
+            }
+        }
+        return Ok(photocraft_gpu::Stats::default());
+    }
     let cpu = photocraft_compose::render(doc, rect);
     let mut first = None;
     for (label, comp) in [("", &mut g.comp), (" (paged)", &mut g.paged)] {
         let (out, stats) = match photocraft_gpu::render_to_vec_stats(comp, &g.device, &g.queue, doc, rect) {
             Ok(r) => r,
-            // Stacks the GPU declines (noise, Stroke Emboss, an outside stroke over a shadow or glow) render on the CPU
-            // path, which is the oracle itself: nothing to compare.
-            Err(e) if e.to_string().contains("uses the CPU path") => return Ok(photocraft_gpu::Stats::default()),
+            // An unexpected fallback is a failure, not a pass: the documented CPU-only stacks are handled above.
             Err(e) => return Err(format!("{what}{label}: {e}")),
         };
         let worst = worst_diff(&cpu.px, &out);
@@ -1839,6 +1866,38 @@ fn effect_cases() -> Vec<(&'static str, Vec<Effect>)> {
                     paint: FxPaint::Gradient(gradient()),
                     overprint: false,
                 }),
+            ],
+        ),
+        // The documented CPU-only stacks: `diff_rect` asserts the GPU declines them ("uses the CPU path").
+        (
+            "cpu-only: stroke emboss with a stroke",
+            vec![
+                Effect::BevelEmboss(emboss_chisel(BevelStyle::StrokeEmboss, BevelTechnique::ChiselHard)),
+                Effect::Stroke(stroke(5.0, StrokePosition::Center, FxPaint::Color(Color::rgb(0.1, 0.4, 0.9)))),
+            ],
+        ),
+        (
+            "cpu-only: effect noise",
+            vec![Effect::OuterGlow({
+                let mut g = glow(FxPaint::Color(Color::rgb(1.0, 0.9, 0.2)), GlowTechnique::Softer, 8.0, 0.0, GlowSource::Edge);
+                g.noise = 0.3;
+                g
+            })],
+        ),
+        (
+            "cpu-only: outside stroke over a shadow",
+            vec![
+                Effect::DropShadow(shadow(BlendMode::Multiply, 0.75, 120.0, 6.0, 8.0, 0.0)),
+                Effect::Stroke(stroke(4.0, StrokePosition::Outside, FxPaint::Color(Color::rgb(0.0, 0.0, 0.0)))),
+            ],
+        ),
+        (
+            "multiple instances without exterior effects",
+            vec![
+                Effect::Stroke(stroke(2.0, StrokePosition::Outside, FxPaint::Color(Color::rgb(1.0, 1.0, 1.0)))),
+                Effect::Stroke(stroke(5.0, StrokePosition::Outside, FxPaint::Color(Color::rgb(0.1, 0.1, 0.1)))),
+                Effect::InnerShadow(shadow(BlendMode::Normal, 0.5, 270.0, 8.0, 3.0, 0.0)),
+                Effect::ColorOverlay { common: FxCommon::new(BlendMode::Normal, 0.3), color: Color::rgb(1.0, 0.0, 0.0) },
             ],
         ),
         (
