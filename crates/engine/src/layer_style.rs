@@ -1559,6 +1559,7 @@ mod tests {
         assert_eq!(lin.contour, Contour::Linear);
     }
 
+    /// The Gaussian and Cove - Deep presets keep their measured shape.
     #[test]
     fn contour_presets_match_photoshop() {
         // Measured: Gaussian reads 0.64 at 0.5 as the preset curve (glows, gloss). A Satin applies

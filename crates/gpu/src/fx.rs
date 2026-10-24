@@ -251,6 +251,7 @@ impl B {
         self.stages.push(s);
     }
 
+    /// The last step of a coverage map: optional difference of two inputs, Invert, the contour lookup and the shape multiply.
     fn finish_lut(&mut self, a: In, b: Option<In>, invert: bool, lut: Option<Vec<f32>>, times_shape: bool, out: usize) {
         let flag = |v: bool| f32::from(u8::from(v));
         let mut s = stage(
@@ -285,6 +286,7 @@ pub(crate) fn blur_kernel(size: f32) -> Option<(i32, Vec<f32>)> {
     (k.0 > 0).then_some(k)
 }
 
+/// The contour as a coverage lookup table (`None` for Linear).
 fn contour_lut(c: &Contour) -> Option<Vec<f32>> {
     match c {
         Contour::Linear => None,

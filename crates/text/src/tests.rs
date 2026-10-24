@@ -2533,6 +2533,28 @@ fn antialias_modes_change_edge_fringe() {
     assert!(sharp > 0.0);
 }
 
+/// Glyph origins round in device space: with a scaled draw transform the left edge of every 'l' still has at most a few
+/// distinct coverages (the correction must not be scaled again, which would leave the origins off the grid).
+#[test]
+fn glyph_origins_round_after_the_draw_transform() {
+    use photocraft_doc::text::AntiAlias;
+    let mut e = TextEngine::new();
+    let layer = TextLayer { antialias: AntiAlias::Smooth, transform: Affine::scale(2.0), ..point("llllllllllllllll", 12.0) };
+    let (_, r) = e.render(&layer, 72.0, PixelFormat::RGBA8);
+    let n = r.surface.channels();
+    let w = r.rect.width() as usize;
+    let px = r.surface.read_region(r.rect);
+    let row = r.rect.height() as usize / 2;
+    let alpha: Vec<f32> = (0..w).map(|x| px[(row * w + x) * n + n - 1]).collect();
+    let mut seen = std::collections::BTreeSet::new();
+    for x in 1..w {
+        if alpha[x - 1] < 0.01 && alpha[x] > 0.01 {
+            seen.insert((alpha[x] * 20.0).round() as i32);
+        }
+    }
+    assert!(seen.len() <= 5, "quarter-pixel origins give at most four distinct edge coverages, got {}", seen.len());
+}
+
 /// Measured (`tools/typo_probe.py`): glyph origins are rounded along x to a per-mode grid: Smooth to a quarter
 /// pixel (mean RMSE over 9 / 13 / 24 / 64 px 2.86 -> 2.32), None to whole pixels with light hinting (14.9 -> 8.1), Sharp
 /// and Crisp to 1/4, 1/2 and 1 px as the size grows (Crisp 4.74 -> 2.38, Sharp 6.65 -> 4.13), Strong not at all.

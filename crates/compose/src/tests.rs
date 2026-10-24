@@ -1238,6 +1238,7 @@ fn fx_doc(effects: Vec<Effect>) -> Document {
     d
 }
 
+/// A blue stroke of `size` at `position`, for tests.
 fn stroke_fx(size: f32, position: StrokePosition) -> StrokeFx {
     StrokeFx {
         common: FxCommon::new(photocraft_color::BlendMode::Normal, 1.0),
@@ -1248,10 +1249,12 @@ fn stroke_fx(size: f32, position: StrokePosition) -> StrokeFx {
     }
 }
 
+/// [`stroke_fx`] as an effect.
 fn stroke(size: f32, position: StrokePosition) -> Effect {
     Effect::Stroke(stroke_fx(size, position))
 }
 
+/// An outside stroke is exactly as wide as its size.
 #[test]
 fn outside_stroke_width() {
     let d = fx_doc(vec![stroke(3.0, StrokePosition::Outside)]);
@@ -1878,6 +1881,7 @@ fn vector_mask_combines_with_pixel_mask() {
     assert!(close4(px(&d, 6, 1), [1.0; 4]));
 }
 
+/// Effect maps over a few distant pixels are not built over the whole canvas.
 #[test]
 fn effect_maps_over_distant_pixels_are_not_built_over_the_canvas() {
     // Two pixels 190000 apart: the effect source region spans 3.6·10¹⁰ px.
@@ -1890,6 +1894,22 @@ fn effect_maps_over_distant_pixels_are_not_built_over_the_canvas() {
     let px = render(&doc, Rect::new(0, 0, 4, 4));
     assert_eq!(px.px.len(), 16);
     assert!(t.elapsed().as_secs() < 20, "{:?}", t.elapsed());
+}
+
+/// The maps keep the canvas as the frame of unaligned gradients, so another canvas must not reuse them.
+#[test]
+fn effect_maps_are_rebuilt_for_another_canvas() {
+    let mut doc = doc_white(64, 64);
+    let mut l = solid_layer("fx", Rect::new(16, 16, 48, 48), [1.0, 0.0, 0.0, 1.0]);
+    l.effects.items.push(photocraft_doc::Effect::default_drop_shadow());
+    doc.layers.push(l);
+    let patterns = pattern::PreparedPatterns::new(&doc.patterns, pattern::PREPARED_PATTERN_BYTES);
+    let cx = Ctx::for_doc(&doc, &patterns);
+    let a = effect_maps(&doc.layers[1], doc.bounds(), &cx);
+    let mut bigger = Ctx::for_doc(&doc, &patterns);
+    bigger.canvas = Rect::new(0, 0, 200, 200);
+    let b = effect_maps(&doc.layers[1], doc.bounds(), &bigger);
+    assert!(!std::sync::Arc::ptr_eq(&a, &b), "a resized canvas rebuilds the maps");
 }
 
 #[test]

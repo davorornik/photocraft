@@ -923,6 +923,7 @@ fn dilate(s: &Map, r: f32) -> Map {
     out
 }
 
+/// The contour as a coverage lookup table (`None` for Linear, which changes nothing).
 fn contour_lut(c: &Contour) -> Option<Vec<f32>> {
     match c {
         Contour::Linear => None,
@@ -1199,6 +1200,7 @@ pub fn spread_split(size: f32, spread: f32) -> (f32, f32) {
     ((size * spread).round(), size * (1.0 - spread))
 }
 
+/// A drop or inner shadow's coverage map: the shape shifted by the angle and distance, spread, blurred, contoured (outer shadows keep the fringe cap) and speckled by noise.
 fn shadow_map(shape: &Map, s: &Shadow, light: &GlobalLight, inner: bool, origin: (i32, i32)) -> Map {
     let angle = if s.use_global_light { light.angle } else { s.angle };
     let (dx, dy) = offset(angle, s.distance);
@@ -1218,6 +1220,7 @@ fn shadow_map(shape: &Map, s: &Shadow, light: &GlobalLight, inner: bool, origin:
     m
 }
 
+/// An outer or inner glow's coverage map from the shape: the technique's falloff, then the contour over the Range, then noise.
 fn glow_map(shape: &Map, g: &Glow, inner: bool, origin: (i32, i32)) -> Map {
     // An inner glow is built from the edge inwards; a centre-source glow is its inverse, taken
     // after the contour and Range (Photoshop 27.11, measured: the centre glow is exactly
@@ -1291,6 +1294,7 @@ fn paint_pattern(
     );
 }
 
+/// Paints `m` through an effect paint (colour, gradient or pattern) into `dst` with the effect's blend mode and opacity.
 #[allow(clippy::too_many_arguments)]
 fn paint_fx(
     dst: &mut Buffer,
@@ -1962,6 +1966,7 @@ pub fn satin_distance(s: &photocraft_doc::effects::Satin) -> f32 {
     s.distance.max(1.0)
 }
 
+/// A satin's coverage map: the contour applied to the shape shifted both ways and blurred, their absolute difference, then Invert.
 fn satin_map(shape: &Map, s: &photocraft_doc::effects::Satin) -> Map {
     let (dx, dy) = offset(s.angle, satin_distance(s));
     let mut a = shape.shifted(dx, dy, 0.0);
@@ -2012,6 +2017,7 @@ pub(crate) fn map_count(layer: &Layer) -> usize {
     1 + per + stroke + vector_outline
 }
 
+/// [`build_maps`] with the document's patterns already prepared.
 pub(crate) fn build_maps_prepared(
     layer: &Layer,
     shape: Vec<f32>,
@@ -2178,6 +2184,7 @@ pub fn composite_with_effects(layer: &Layer, content: &Buffer, backdrop: &mut Bu
     composite_with_effects_prepared(layer, content, backdrop, maps, layer_bounds, &prepared, None);
 }
 
+/// [`composite_with_effects`] with the document's patterns already prepared.
 pub(crate) fn composite_with_effects_prepared(
     layer: &Layer,
     content: &Buffer,
@@ -2778,6 +2785,7 @@ mod tests {
         assert_eq!(tent_kernel(f32::NAN), (0, vec![1.0]));
     }
 
+    /// A texture context with no patterns, for tests.
     fn no_tex() -> TextureCtx<'static> {
         TextureCtx { rect: Rect::new(0, 0, 1, 1), patterns: &[], anchor: (0.0, 0.0), canvas: Rect::new(0, 0, 1, 1) }
     }
@@ -2792,6 +2800,7 @@ mod tests {
         m
     }
 
+    /// A default bevel of `style` and `technique`, for tests.
     fn bevel_of(style: BevelStyle, technique: BevelTechnique) -> Bevel {
         Bevel {
             enabled: true,
@@ -2815,6 +2824,7 @@ mod tests {
         }
     }
 
+    /// Stroke Emboss is active only while an enabled stroke is on the layer.
     #[test]
     fn stroke_emboss_renders_only_on_a_stroked_layer() {
         let bevel = Effect::BevelEmboss(bevel_of(BevelStyle::StrokeEmboss, BevelTechnique::Smooth));
@@ -3296,6 +3306,7 @@ mod tests {
         }
     }
 
+    /// The bevel maps are the same whatever the number of worker threads.
     #[test]
     fn bevel_maps_do_not_depend_on_the_threads() {
         // Every style and technique, softened or not, and a texture; one thread (in order) is the reference.
@@ -3423,6 +3434,7 @@ mod tests {
         }
     }
 
+    /// A bevel's Contour and Texture elements reshape its height map.
     #[test]
     fn bevel_contour_and_texture_shape_the_height() {
         let shape = square(40, 6, 34);
@@ -3592,6 +3604,7 @@ mod tests {
         assert_eq!(inside_stroke_blend(BlendMode::Dissolve), BlendMode::Dissolve);
     }
 
+    /// A satin map of `shape` at angle 0 with the given contour, Invert, distance and size, for tests.
     fn satin_of(shape: &Map, contour: Contour, invert: bool, distance: f32, size: f32) -> Map {
         let s = photocraft_doc::effects::Satin {
             common: photocraft_doc::FxCommon::new(BlendMode::Normal, 1.0),
@@ -3606,6 +3619,7 @@ mod tests {
         satin_map(shape, &s)
     }
 
+    /// The Cone contour, for tests.
     fn cone() -> Contour {
         let pt = |input, output| photocraft_doc::adjust::CurvePoint { input, output };
         Contour::Custom { name: "Cone".into(), points: vec![pt(0.0, 0.0), pt(0.5, 1.0), pt(1.0, 0.0)], corners: vec![true; 3] }
@@ -3679,6 +3693,7 @@ mod tests {
         assert!((t(GradientStyle::Radial, 90.0, 200.0, 250.0) - 0.5).abs() < 1e-3);
     }
 
+    /// An outer effect with a contour that is high at zero still paints nothing where it has no coverage.
     #[test]
     fn an_inverted_contour_paints_nothing_where_an_outer_effect_has_no_coverage() {
         // Measured: Cone - Inverted is 1 at 0, yet a shadow / outer glow is 0 outside its blur.

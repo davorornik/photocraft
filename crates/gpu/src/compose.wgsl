@@ -1257,7 +1257,8 @@ fn fs_fxpaint(in: VOut) -> @location(0) vec4<f32> {
     // effects::paint_color_fill: a bevel's highlight / shadow in the special eight blends a colour pulled
     // toward the mode's neutral by the amount, at full strength (Fill), not at that coverage.
     if ((op.flags & F_FILL) != 0u && fill_is_special(op.mode)) {
-        return composite_fill(op.mode, dst, vec4(c.rgb, c.a), 1.0, k, false);
+        // As `effects::paint`: the paint's own alpha folds into the Fill amount, the source itself is opaque.
+        return composite_fill(op.mode, dst, vec4(c.rgb, 1.0), 1.0, k * c.a, false);
     }
     return fx_composite(d, dst, vec4(c.rgb, c.a * k));
 }

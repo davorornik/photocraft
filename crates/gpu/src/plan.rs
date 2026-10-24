@@ -1481,6 +1481,7 @@ impl<'a> Planner<'a> {
         Ok(self.write_back(backdrop, merged, clip))
     }
 
+    /// The paint source of an effect (colour, gradient or pattern) laid out in `anchor`'s frame.
     fn fx_paint(&self, p: &'a FxPaint, anchor: (f64, f64)) -> Paint<'a> {
         match p {
             FxPaint::Color(c) => Paint::Color(c.to_rgb()),

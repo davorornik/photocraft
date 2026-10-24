@@ -1548,6 +1548,7 @@ fn stroke(size: f32, position: StrokePosition, paint: FxPaint) -> StrokeFx {
     StrokeFx { common: FxCommon::new(BlendMode::Normal, 0.9), size, position, paint, overprint: false }
 }
 
+/// A small two-tone checker pattern for the pattern cases.
 fn checker_pattern() -> Pattern {
     let mut s = photocraft_raster::Surface::new(PixelFormat::RGBA8);
     s.fill_rect(Rect::new(0, 0, 6, 5), &[0.9, 0.2, 0.1, 1.0]);
@@ -1571,6 +1572,7 @@ fn emboss_chisel(style: BevelStyle, technique: BevelTechnique) -> Bevel {
     b
 }
 
+/// Every effect configuration the CPU and GPU compositors must agree on.
 fn effect_cases() -> Vec<(&'static str, Vec<Effect>)> {
     let pat = checker_pattern();
     let pat_paint = FxPaint::Pattern { name: pat.name.clone(), id: pat.id.clone(), scale: 1.0 };
@@ -1823,6 +1825,22 @@ fn effect_cases() -> Vec<(&'static str, Vec<Effect>)> {
                 Effect::Stroke(stroke(3.0, StrokePosition::Inside, FxPaint::Color(Color::rgb(0.1, 0.4, 0.9)))),
             ],
         ),
+        // A paint with its own alpha (a gradient with opacity stops) in the special-eight modes: the alpha folds into the
+        // Fill amount on both renderers.
+        (
+            "special-eight modes with translucent gradient paints",
+            vec![
+                Effect::GradientOverlay { common: FxCommon::new(BlendMode::ColorDodge, 0.8), gradient: gradient(), dither: false, interpolation: None },
+                Effect::InnerGlow(glow(FxPaint::Gradient(gradient()), GlowTechnique::Softer, 6.0, 0.0, GlowSource::Edge)),
+                Effect::Stroke(StrokeFx {
+                    common: FxCommon::new(BlendMode::Normal, 0.9),
+                    size: 4.0,
+                    position: StrokePosition::Outside,
+                    paint: FxPaint::Gradient(gradient()),
+                    overprint: false,
+                }),
+            ],
+        ),
         (
             "full stack",
             vec![
@@ -1873,6 +1891,7 @@ fn fx_check(g: &mut Gpu, doc: &Document, what: &str) -> photocraft_gpu::Stats {
     fx_diff(g, doc, what).unwrap_or_else(|e| panic!("{e}"))
 }
 
+/// Every effect case renders the same on the GPU as on the CPU, at 8 and 16 bits.
 #[test]
 fn layer_effects_every_kind() {
     let Some(mut g) = gpu() else { return };
@@ -2162,6 +2181,7 @@ fn layer_effects_update_incrementally() {
     fx_check(&mut g, &d, "moved and painted");
 }
 
+/// Effects follow a layer that overhangs the canvas edge the same way on both renderers.
 #[test]
 fn layer_effects_move_with_a_layer_overhanging_the_canvas() {
     // A layer the size of the canvas with a drop shadow and a stroke, dragged with the Move tool

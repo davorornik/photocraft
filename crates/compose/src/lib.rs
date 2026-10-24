@@ -2322,6 +2322,8 @@ fn effect_maps(layer: &Layer, rect: Rect, cx: &Ctx) -> std::sync::Arc<effects::F
     cx.layer_keys.identity(layer, cx.doc).hash(&mut h);
     (region.x0, region.y0, region.x1, region.y1).hash(&mut h);
     (cx.light.angle.to_bits(), cx.light.altitude.to_bits()).hash(&mut h);
+    // The maps keep the canvas as the frame of unaligned gradients, so a resized canvas must not reuse them.
+    (cx.canvas.x0, cx.canvas.y0, cx.canvas.x1, cx.canvas.y1).hash(&mut h);
     let key = h.finish();
     // Prepared for this render (see `prepare_effects`): no global lookup, no build.
     if let Some((m, _)) = cx.fx_maps.lock().unwrap_or_else(|e| e.into_inner()).get(&key) {
@@ -2389,6 +2391,7 @@ fn cached_effect_maps(layer: &Layer, region: Rect, key: u64, cx: &Ctx) -> std::s
     maps
 }
 
+/// The texture context of `layer`'s effect maps over `region`: the patterns, the linked origin and the canvas.
 fn texture_ctx<'a>(layer: &Layer, region: Rect, cx: &Ctx<'a>) -> effects::TextureCtx<'a> {
     let sb = effects_frame(layer, cx.canvas);
     effects::TextureCtx {

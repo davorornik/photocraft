@@ -235,6 +235,17 @@ pub struct Source<'a> {
     pub nearest: bool,
 }
 
+/// The document's canvas in work pixels (`scale` times the document's), the frame an unaligned gradient is laid out on.
+fn work_canvas(doc: &Document, scale: f64) -> Rect {
+    let b = doc.bounds();
+    Rect::new(
+        (f64::from(b.x0) * scale).floor() as i32,
+        (f64::from(b.y0) * scale).floor() as i32,
+        (f64::from(b.x1) * scale).ceil() as i32,
+        (f64::from(b.y1) * scale).ceil() as i32,
+    )
+}
+
 /// Composite the moving texels with `work`'s style over `plan.shown`, on transparency. `work`
 /// and `plan` come from [`plan`]; `doc` gives the global light and the patterns.
 pub fn compose(doc: &Document, work: &Layer, plan: &Plan, source: &Source) -> Option<Buffer> {
@@ -250,7 +261,7 @@ pub fn compose(doc: &Document, work: &Layer, plan: &Plan, source: &Source) -> Op
         shape,
         plan.content,
         &doc.global_light,
-        &TextureCtx { rect: plan.content, patterns: &doc.patterns, anchor, canvas: doc.bounds() },
+        &TextureCtx { rect: plan.content, patterns: &doc.patterns, anchor, canvas: work_canvas(doc, s) },
     );
     // The maps hold what every pixel needs of its surroundings, so the style is laid over the
     // content band by band, in parallel, as the compositor does tile by tile.

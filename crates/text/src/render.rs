@@ -216,6 +216,7 @@ pub(crate) fn glyph_grid(mode: AntiAlias, size_px: f32) -> (f64, bool) {
     }
 }
 
+/// Draws one [`Pass`] of the layout's glyphs and decorations into `sink` through `transform`, at the mode's glyph grid and hinting.
 fn draw_pass(layout: &TextLayout, transform: &Xform, sink: &mut impl LineSink, only_color: Option<&Color>, warp: Option<&Warp>, pass: Pass, aa: AntiAlias) {
     let mut hinters: Vec<Option<skrifa::outline::HintingInstance>> = (0..layout.faces.len()).map(|_| None).collect();
     for g in &layout.glyphs {
@@ -271,17 +272,6 @@ fn draw_pass(layout: &TextLayout, transform: &Xform, sink: &mut impl LineSink, o
                 Some(h) if hint => DrawSettings::hinted(h, false),
                 _ => DrawSettings::unhinted(Size::new(face.size_px), LocationRef::new(&coords)),
             };
-            // Round the glyph origin along x to the mode's grid (only for unwarped text).
-            let local = if quantum > 0.0 && bend.is_none() {
-                let mut m = local.0;
-                let t = transform.mul(&Xform(m));
-                // Half-up with a nudge, so a glyph sitting exactly on a tie rounds the same in every pass and tile
-                // (the transform's float error differs between them).
-                m[4] += ((t.0[4] / quantum + 0.5 + 1e-3).floor()) * quantum - t.0[4];
-                Xform(m)
-            } else {
-                local
-            };
             match bend {
                 Some(w) => {
                     let mut ws = WarpSink { inner: &mut *sink, warp: w, post: *transform };
@@ -291,7 +281,15 @@ fn draw_pass(layout: &TextLayout, transform: &Xform, sink: &mut impl LineSink, o
                     }
                 }
                 None => {
-                    let mut pen = Pen::new(&mut *sink, transform.mul(&local));
+                    // Round the glyph origin along x to the mode's grid, after the draw transform (a scale or turn
+                    // would otherwise carry the correction sideways); warped text keeps its exact placement.
+                    let mut placed = transform.mul(&local);
+                    if quantum > 0.0 {
+                        // Half-up with a nudge, so a glyph sitting exactly on a tie rounds the same in every pass and
+                        // tile (the transform's float error differs between them).
+                        placed.0[4] = (placed.0[4] / quantum + 0.5 + 1e-3).floor() * quantum;
+                    }
+                    let mut pen = Pen::new(&mut *sink, placed);
                     if outline.draw(settings, &mut pen).is_ok() {
                         skrifa::outline::OutlinePen::close(&mut pen);
                     }
