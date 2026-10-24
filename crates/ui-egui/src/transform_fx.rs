@@ -245,7 +245,13 @@ pub fn compose(doc: &Document, work: &Layer, plan: &Plan, source: &Source) -> Op
     let content = resample(source.image, source.uv, &to_unit, inside, plan.content, source.nearest);
     let shape: Vec<f32> = content.px.iter().map(|p| p[3]).collect();
     let anchor = work.effects.reference.unwrap_or((f64::from(plan.bounds.x0), f64::from(plan.bounds.y0)));
-    let maps = effects::build_maps(work, shape, plan.content, &doc.global_light, &TextureCtx { rect: plan.content, patterns: &doc.patterns, anchor });
+    let maps = effects::build_maps(
+        work,
+        shape,
+        plan.content,
+        &doc.global_light,
+        &TextureCtx { rect: plan.content, patterns: &doc.patterns, anchor, canvas: doc.bounds() },
+    );
     // The maps hold what every pixel needs of its surroundings, so the style is laid over the
     // content band by band, in parallel, as the compositor does tile by tile.
     let shown = plan.shown;
@@ -654,7 +660,13 @@ mod tests {
         let content = resample(&texels, [1.0, 1.0], &to_unit, [85.0, 97.5], plan.content, false);
         let shape = content.px.iter().map(|p| p[3]).collect();
         let anchor = (f64::from(plan.bounds.x0), f64::from(plan.bounds.y0));
-        let maps = effects::build_maps(&work, shape, plan.content, &doc().global_light, &TextureCtx { rect: plan.content, patterns: &[], anchor });
+        let maps = effects::build_maps(
+            &work,
+            shape,
+            plan.content,
+            &doc().global_light,
+            &TextureCtx { rect: plan.content, patterns: &[], anchor, canvas: plan.content },
+        );
         let mut whole = Buffer::transparent(plan.shown);
         effects::composite_with_effects(&work, &crop(&content, plan.shown), &mut whole, &maps, plan.bounds, &[]);
         assert_eq!(banded.rect, whole.rect);
