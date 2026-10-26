@@ -1028,18 +1028,22 @@ pub fn hash_noise(x: i64, y: i64) -> f32 {
 /// blur's near-zero tail out to the edge of its reach (#7833). The original generator was not recovered
 /// (its bytes show no simple LCG, tiling or lane structure), so `u` here is [`hash_noise`]: the statistics match,
 /// individual pixels cannot.
-fn noise(m: &mut Map, amount: f32, x0: i32, y0: i32) {
+///
+/// The cap is `FRINGE_SLOPE × coverage before the contour` (`pre`), not × the contoured value: Photoshop caps by
+/// the blurred coverage, so a non-monotonic contour (ring, sawtooth) does not inflate the speckle
+fn noise(m: &mut Map, pre: &Map, amount: f32, x0: i32, y0: i32) {
     if !amount.is_finite() || amount <= 0.0 {
         return;
     }
     for y in 0..m.h {
         for x in 0..m.w {
-            let v = &mut m.v[y * m.w + x];
+            let i = y * m.w + x;
+            let v = &mut m.v[i];
             if *v <= 0.0 {
                 continue;
             }
             let n = hash_noise(i64::from(x0 + x as i32), i64::from(y0 + y as i32));
-            *v = (*v + amount.min(FRINGE_SLOPE * *v) * (2.0 * n - 1.0)).clamp(0.0, 1.0);
+            *v = (*v + amount.min(FRINGE_SLOPE * pre.v[i]) * (2.0 * n - 1.0)).clamp(0.0, 1.0);
         }
     }
 }
@@ -1210,8 +1214,9 @@ fn shadow_map(shape: &Map, s: &Shadow, light: &GlobalLight, inner: bool, origin:
     m = dilate(&m, r);
     blur(&mut m, bw);
     let lut = contour_lut(&s.contour);
+    let pre = m.clone();
     let mut m = apply_lut(m, if inner { lut } else { outer_fringe_lut(lut) });
-    noise(&mut m, s.noise, origin.0, origin.1);
+    noise(&mut m, &pre, s.noise, origin.0, origin.1);
     if inner {
         for (v, a) in m.v.iter_mut().zip(&shape.v) {
             *v *= a;
@@ -1253,11 +1258,12 @@ fn glow_map(shape: &Map, g: &Glow, inner: bool, origin: (i32, i32)) -> Map {
             m
         }
     };
+    let pre = m.clone();
     m = apply_lut(m, if inner { glow_lut(g) } else { outer_fringe_lut(glow_lut(g)) });
     if inner && g.source == GlowSource::Center {
         m = m.map(|v| 1.0 - v);
     }
-    noise(&mut m, g.noise, origin.0, origin.1);
+    noise(&mut m, &pre, g.noise, origin.0, origin.1);
     if inner {
         for (v, a) in m.v.iter_mut().zip(&shape.v) {
             *v *= a;
@@ -3545,14 +3551,16 @@ mod tests {
     fn effect_noise_is_additive_and_uniform() {
         let n = 200;
         let mut m = Map::new(n, n, 0.5);
-        noise(&mut m, 0.5, 0, 0);
+        let pre = m.clone();
+        noise(&mut m, &pre, 0.5, 0, 0);
         let mean = m.v.iter().sum::<f32>() / m.v.len() as f32;
         let std = (m.v.iter().map(|v| (v - mean).powi(2)).sum::<f32>() / m.v.len() as f32).sqrt();
         assert!((mean - 0.5).abs() < 0.01, "mean {mean}");
         assert!((std - 0.2887).abs() < 0.01, "std {std} (uniform 0..1 is 0.2887; the measured value is 74/255)");
         assert!(m.v.iter().cloned().fold(1.0f32, f32::min) < 0.02 && m.v.iter().cloned().fold(0.0f32, f32::max) > 0.98);
         let mut tiny = Map::new(n, n, 0.004);
-        noise(&mut tiny, 0.5, 0, 0);
+        let pre = tiny.clone();
+        noise(&mut tiny, &pre, 0.5, 0, 0);
         assert!(tiny.v.iter().all(|v| *v <= 0.004 * 9.5 + 1e-6), "a near-zero coverage gains at most 8.5 v");
     }
 
@@ -3881,7 +3889,8 @@ mod tests {
             tent_direct(&mut direct, size);
             let mut actual = shape;
             blur(&mut actual, size);
-            noise(&mut actual, 0.26, 0, 0);
+            let pre = actual.clone();
+            noise(&mut actual, &pre, 0.26, 0, 0);
             let stray = direct.v.iter().zip(&actual.v).filter(|(reference, noisy)| **reference == 0.0 && **noisy > 1e-5).count();
             assert_eq!(stray, 0, "noise created {stray} visible pixels outside a size-{size} blur");
         }
